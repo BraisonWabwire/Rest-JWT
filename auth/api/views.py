@@ -7,7 +7,11 @@ from rest_framework.response import Response
 from .serializers import CustomTokenObtainPairSerializer
 from .forms import UserRegistrationForm, LoginForm
 from .permissions import IsAdmin, IsInstructor, IsStudent
-import requests
+from rest_framework_simplejwt.tokens import AccessToken, TokenError
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Custom Token View
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -28,8 +32,6 @@ def register(request):
     return render(request, 'register.html', {'form': form})
 
 # Login View
-from rest_framework_simplejwt.tokens import AccessToken, TokenError
-
 def login_form(request):
     # Check for valid token in cookie
     token = request.COOKIES.get('access_token')
@@ -37,24 +39,26 @@ def login_form(request):
         try:
             access_token = AccessToken(token)
             user = access_token.user
+            logger.info(f"User {user.username} accessed login with valid token")
             return render(request, 'home.html', {
                 'username': user.username,
                 'role': user.role
             })
-        except TokenError:
+        except TokenError as e:
+            logger.warning(f"Invalid token on login attempt: {e}")
             pass  # Invalid token, proceed to login
     
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
-            data = {
+            logger.info(f"Login attempt for username: {form.cleaned_data['username']}")
+            serializer = CustomTokenObtainPairSerializer(data={
                 'username': form.cleaned_data['username'],
                 'password': form.cleaned_data['password']
-            }
+            })
             try:
-                response = requests.post(request.build_absolute_uri('/api/token/'), data=data)
-                response.raise_for_status()
-                token_data = response.json()
+                serializer.is_valid(raise_exception=True)
+                token_data = serializer.validated_data
                 response = render(request, 'home.html', {
                     'username': token_data['username'],
                     'role': token_data['role']
@@ -63,19 +67,40 @@ def login_form(request):
                     'access_token',
                     token_data['access'],
                     httponly=True,
-                    secure=True,
+                    secure=True,  # Use HTTPS in production
                     samesite='Strict'
                 )
+                logger.info(f"Successful login for {token_data['username']}")
                 return response
-            except requests.RequestException:
-                messages.error(request, 'Error connecting to authentication server')
-            except Exception:
+            except Exception as e:
+                logger.error(f"Login failed: {e}")
                 messages.error(request, 'Invalid username or password')
+        else:
+            messages.error(request, 'Invalid form submission')
     else:
         form = LoginForm()
     
     return render(request, 'login.html', {'form': form})
-# Homepage API View (protected by JWT and role)
+
+# Logout View
+def logout_view(request):
+    token = request.COOKIES.get('access_token')
+    if token:
+        try:
+            access_token = AccessToken(token)
+            access_token.blacklist()
+            logger.info(f"Token blacklisted for user {access_token['username']}")
+        except TokenError as e:
+            logger.warning(f"Invalid token on logout: {e}")
+            messages.error(request, 'Invalid token')
+        response = redirect('login_form')
+        response.delete_cookie('access_token')
+        messages.success(request, 'Logged out successfully')
+        return response
+    logger.info("Logout attempted with no token")
+    return redirect('login_form')
+
+# Homepage API View
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin | IsInstructor | IsStudent])
 def home(request):
