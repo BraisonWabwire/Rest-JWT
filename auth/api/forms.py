@@ -1,24 +1,14 @@
 from django import forms
-from api.models import User
+from django.contrib.auth.forms import UserCreationForm
+from .models import User
 
-class UserRegistrationForm(forms.ModelForm):
-    password = forms.CharField(widget=forms.PasswordInput)
+class UserRegistrationForm(UserCreationForm):
+    role = forms.ChoiceField(choices=User.ROLE_CHOICES)
 
     class Meta:
         model = User
-        fields = ['username', 'password', 'role']
-
-    def save(self, commit=True):
-        user = super().save(commit=False)
-        # hash the password properly
-        user.set_password(self.cleaned_data['password'])
-        if commit:
-            user.save()
-        return user
-
-
+        fields = ['username', 'email', 'password1', 'password2', 'role']
 
 class LoginForm(forms.Form):
     username = forms.CharField(max_length=150)
     password = forms.CharField(widget=forms.PasswordInput)
-

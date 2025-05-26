@@ -1,8 +1,36 @@
 <!DOCTYPE html>
 <html>
-<head><title>Home</title></head>
+<head>
+    <title>Home</title>
+    <script>
+        // JavaScript to fetch the homepage data using the JWT token
+        async function loadHomePage() {
+            const token = "{{ access_token }}"; // Passed from login_form view
+            const response = await fetch('/api/home/', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('welcome-message').innerText = 
+                    `Welcome ${data.username} (${data.role})`;
+            } else {
+                window.location.href = "{% url 'login_form' %}"; // Redirect to login on failure
+            }
+        }
+        // Logout function to clear token and redirect
+        function logout() {
+            // Since token is in JavaScript, we can't "delete" it, but we can redirect
+            window.location.href = "{% url 'login_form' %}";
+        }
+        window.onload = loadHomePage;
+    </script>
+</head>
 <body>
-  <h2>Welcome {{ username }} @ {{ role }}</h2>
-  <p>You are logged in.</p>
+    <h1>Home</h1>
+    <p id="welcome-message">Loading...</p>
+    <a href="#" onclick="logout()">Logout</a>
 </body>
 </html>
