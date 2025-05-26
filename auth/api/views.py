@@ -28,7 +28,22 @@ def register(request):
     return render(request, 'register.html', {'form': form})
 
 # Login View
+from rest_framework_simplejwt.tokens import AccessToken, TokenError
+
 def login_form(request):
+    # Check for valid token in cookie
+    token = request.COOKIES.get('access_token')
+    if token:
+        try:
+            access_token = AccessToken(token)
+            user = access_token.user
+            return render(request, 'home.html', {
+                'username': user.username,
+                'role': user.role
+            })
+        except TokenError:
+            pass  # Invalid token, proceed to login
+    
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -37,17 +52,21 @@ def login_form(request):
                 'password': form.cleaned_data['password']
             }
             try:
-                # Call the JWT token endpoint
                 response = requests.post(request.build_absolute_uri('/api/token/'), data=data)
                 response.raise_for_status()
                 token_data = response.json()
-                
-                # Pass the access token and role to the template via a redirect
-                return render(request, 'home.html', {
-                    'access_token': token_data['access'],
+                response = render(request, 'home.html', {
                     'username': token_data['username'],
                     'role': token_data['role']
                 })
+                response.set_cookie(
+                    'access_token',
+                    token_data['access'],
+                    httponly=True,
+                    secure=True,
+                    samesite='Strict'
+                )
+                return response
             except requests.RequestException:
                 messages.error(request, 'Error connecting to authentication server')
             except Exception:
@@ -56,7 +75,6 @@ def login_form(request):
         form = LoginForm()
     
     return render(request, 'login.html', {'form': form})
-
 # Homepage API View (protected by JWT and role)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin | IsInstructor | IsStudent])
