@@ -8,6 +8,7 @@ from .serializers import CustomTokenObtainPairSerializer
 from .forms import UserRegistrationForm, LoginForm
 from .permissions import IsAdmin, IsInstructor, IsStudent
 from rest_framework_simplejwt.tokens import AccessToken, TokenError
+from django.contrib.auth import get_user_model
 import logging
 
 # Set up logging
@@ -38,15 +39,20 @@ def login_form(request):
     if token:
         try:
             access_token = AccessToken(token)
-            user = access_token.user
+            user_id = access_token['user_id']  # Extract user_id from token
+            User = get_user_model()
+            user = User.objects.get(id=user_id)  # Query user from database
             logger.info(f"User {user.username} accessed login with valid token")
             return render(request, 'home.html', {
                 'username': user.username,
                 'role': user.role
             })
-        except TokenError as e:
-            logger.warning(f"Invalid token on login attempt: {e}")
-            pass  # Invalid token, proceed to login
+        except (TokenError, User.DoesNotExist) as e:
+            logger.warning(f"Invalid token or user not found: {e}")
+            # Clear invalid token
+            response = render(request, 'login.html', {'form': LoginForm()})
+            response.delete_cookie('access_token')
+            return response
     
     if request.method == 'POST':
         form = LoginForm(request.POST)
@@ -89,7 +95,7 @@ def logout_view(request):
         try:
             access_token = AccessToken(token)
             access_token.blacklist()
-            logger.info(f"Token blacklisted for user {access_token['username']}")
+            logger.info(f"Token blacklisted for user {access_token['user_id']}")
         except TokenError as e:
             logger.warning(f"Invalid token on logout: {e}")
             messages.error(request, 'Invalid token')
